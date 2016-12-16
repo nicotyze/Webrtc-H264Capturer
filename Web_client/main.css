@@ -1,0 +1,199 @@
+a {
+  text-decoration: none
+}
+
+#availablePeers {
+  width:50px;
+}
+
+#body {
+  overflow: scroll;
+}
+
+#hr {
+  color:#CC0066;
+  background-color:#CC0066;
+  border:1px solid #CC0066;
+}
+
+#iddebug {
+  position:absolute;
+  top:570px;
+  left:40px;
+}
+
+#local {
+  width:175px;
+}
+
+#server {
+  width:175px;
+}
+#iddivlocal {
+  position:absolute;
+  top:0px;
+  left:0px;
+  width:640px;
+  height:480px;
+  border:2px solid #507AAA;
+  background-color:#CCCCCC;
+  margin:20px;
+  z-index:250;
+}
+
+#iddivprntvideo {
+  position:absolute;
+}
+
+#iddivremote {
+  position:absolute;
+  top:600px;
+  left:0px;
+  width:640px;
+  height:480px;
+  border:2px solid #507AAA;
+  background-color:#CCCCCC;
+  margin:20px;
+}
+
+#idheader {
+  margin:0;
+  padding:0;
+  background-color: #507AAA;
+  height : 48px;
+}
+
+#idlogo {
+  float:left;
+  position:relative;
+  top:3px;
+  width:70px;
+  z-index: 200;
+}
+
+#idpeers {
+  position:absolute;
+  top:70px;
+  left:700px;
+  z-index:10;
+}
+
+#idpeersData {
+  position:relative;
+  width:450px;
+  border:2px solid #709ACA;
+}  
+
+#idtext {
+  position:relative;
+  top:9px;
+  color: #103A5A;
+  text-align:left;
+}
+
+#idtitle {
+  position:relative;
+  float:right;
+  padding-right:40px;
+  width:500px;
+  height : 48px;
+  color: #fff;
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+  font-size:xx-large;
+}
+
+#idtitledemo {
+  position:relative;
+  width:600px;
+  color: #fff;
+  left: 10px;
+  top: 10px;
+  font-size:x-large;
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+}
+
+#peersLog {
+  width:500px;
+}
+
+#remote {
+  width:640px;
+  height:480px;
+}
+
+#selfView {
+  top:0px;
+  width:640px;
+  height:480px;
+}
+
+.imgbutton {
+  width:50px;
+}
+
+.peerInfo {
+  position:relative;
+  left:-43px;
+  width:100px !important;
+  text-align:right;
+}
+
+.peerName {
+  position:relative;
+  left:-43px;
+  width:70%;
+  overflow: hidden;
+  text-align:left;
+  text-overflow: ellipsis;
+}
+
+.input {
+  position:relative;
+  top:9px;
+  color: #333333;
+  border: 1px ridge #80AADA; 
+  padding: 2px;
+  background: rgba(255,255,255,0.5);
+  margin: 0 0 10px 0;
+}
+
+.idbutton {
+  vertical-align: bottom;
+}
+
+@-webkit-keyframes connectAnimation {
+  0% {
+    -webkit-transform:matrix(1, 0, 0, 1, 0, 0);
+     }
+  25% {
+    -webkit-transform:matrix(0.81, 0, 0, 0.81, 40, 30);
+     }
+  50% {
+    -webkit-transform:matrix(0.66, 0, 0, 0.66, 80, 60);
+     }
+  75% {
+    -webkit-transform:matrix(0.5, 0, 0, 0.5, 120, 90);
+     }
+  100% {
+    -webkit-transform:matrix(0.33, 0, 0, 0.33, 214, 161);
+     }
+}
+
+@-webkit-keyframes disconnectAnimation {
+  0% {
+    -webkit-transform:matrix(0.33, 0, 0, 0.33, 160, 120);
+     }
+  25% {
+    -webkit-transform:matrix(0.5, 0, 0, 0.5, 120, 90);
+     }
+  50% {
+    -webkit-transform:matrix(0.66, 0, 0, 0.66, 80, 60);
+     }
+  75% {
+    -webkit-transform:matrix(0.81, 0, 0, 0.81, 40, 30);
+     }
+  100% {
+    -webkit-transform:matrix(1, 0, 0, 1, 0, 0);
+     }
+}
+

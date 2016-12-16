@@ -1,0 +1,61 @@
+<html>
+<head>
+  <title>PeerConnection web client</title>
+  <script src="main.js"></script> 
+  <link rel="stylesheet" href="main.css" />
+</head>
+
+<body onload="onLoad()">
+
+  <div id="iddivprntvideo">
+    <div id="iddivremote">
+      <video style="display:none" id="remote" autoplay="autoplay"></video>
+    </div>
+    <div id="iddivlocal">
+      <video style="display:none" id="selfView" autoplay="autoplay"></video>
+    </div>
+  </div>
+
+  <div id="idpeers">
+    <table>
+
+    <tr>
+      <td><div id="idtext">Server</div>
+      <input class="input" type="text" id="server" width="200px" value="http://127.0.0.1:8888" /></td>
+    </tr>
+    <tr>
+      <td><div id="idtext">My name</div>
+      <input class="input" type="text" id="local" value="PCpilsup"  autofocus/></td>
+      <td class="idbutton"><button id="connect" onclick="connect();">Sign in</button>
+          <button disabled="true" id="disconnect" onclick="disconnect();">Sign out</button>
+      </td>
+    </tr>
+    </table>
+    <hr>
+    <text id="availablePeers"></text>
+    <div id="idpeersData">
+      <table id="peersLog">
+      </table>
+    </div>
+  </div>
+
+  <div id="iddebug">
+    <table>
+      <tr>
+        <td>
+          <div id="myID">My ID: </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div id="remoteID"> Remote ID:
+            <input readonly type="text" id="peer_id" value="-1" style="border: 0px solid;" />
+              Remote Name:
+            <input readonly type="text" id="callee" value="" style="border: 0px solid;"/>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

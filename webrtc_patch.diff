@@ -1,0 +1,1049 @@
+diff --git a/webrtc/api/jsepsessiondescription.cc b/webrtc/api/jsepsessiondescription.cc
+index 547a60f..ba36a97 100644
+--- a/webrtc/api/jsepsessiondescription.cc
++++ b/webrtc/api/jsepsessiondescription.cc
+@@ -42,10 +42,10 @@ const char SessionDescriptionInterface::kOffer[] = "offer";
+ const char SessionDescriptionInterface::kPrAnswer[] = "pranswer";
+ const char SessionDescriptionInterface::kAnswer[] = "answer";
+ 
+-const int JsepSessionDescription::kDefaultVideoCodecId = 100;
++const int JsepSessionDescription::kDefaultVideoCodecId = 107;
+ // This is effectively a max value of the frame rate. 30 is default from camera.
+ const int JsepSessionDescription::kDefaultVideoCodecFramerate = 60;
+-const char JsepSessionDescription::kDefaultVideoCodecName[] = "VP8";
++const char JsepSessionDescription::kDefaultVideoCodecName[] = "H264";
+ // Used as default max video codec size before we have it in signaling.
+ #if defined(ANDROID) || defined(WEBRTC_IOS)
+ // Limit default max video codec size for Android to avoid
+@@ -53,10 +53,10 @@ const char JsepSessionDescription::kDefaultVideoCodecName[] = "VP8";
+ // than 1280x720 or 720x1280.
+ // Same patch for iOS to support 720P in portrait mode.
+ const int JsepSessionDescription::kMaxVideoCodecWidth = 1280;
+-const int JsepSessionDescription::kMaxVideoCodecHeight = 1280;
++const int JsepSessionDescription::kMaxVideoCodecHeight = 720;
+ #else
+-const int JsepSessionDescription::kMaxVideoCodecWidth = 1920;
+-const int JsepSessionDescription::kMaxVideoCodecHeight = 1080;
++const int JsepSessionDescription::kMaxVideoCodecWidth = 1280;
++const int JsepSessionDescription::kMaxVideoCodecHeight = 720;
+ #endif
+ 
+ SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
+diff --git a/webrtc/build/webrtc.gni b/webrtc/build/webrtc.gni
+index 71a4eda..9db8a90 100644
+--- a/webrtc/build/webrtc.gni
++++ b/webrtc/build/webrtc.gni
+@@ -114,7 +114,7 @@ declare_args() {
+   # also: |rtc_initialize_ffmpeg|.
+   # CHECK THE OPENH264, FFMPEG AND H.264 LICENSES/PATENTS BEFORE BUILDING.
+   # http://www.openh264.org, https://www.ffmpeg.org/
+-  rtc_use_h264 = proprietary_codecs && !is_android && !is_ios
++  rtc_use_h264 = true #proprietary_codecs && !is_android && !is_ios
+ 
+   # Determines whether QUIC code will be built.
+   rtc_use_quic = false
+diff --git a/webrtc/examples/peerconnection/client/conductor.cc b/webrtc/examples/peerconnection/client/conductor.cc
+index 1b65651..710358f 100644
+--- a/webrtc/examples/peerconnection/client/conductor.cc
++++ b/webrtc/examples/peerconnection/client/conductor.cc
+@@ -10,9 +10,12 @@
+ 
+ #include "webrtc/examples/peerconnection/client/conductor.h"
+ 
++
+ #include <memory>
+ #include <utility>
+ #include <vector>
++#include <iostream>
++#include <fstream>
+ 
+ #include "webrtc/api/test/fakeconstraints.h"
+ #include "webrtc/base/common.h"
+@@ -21,6 +24,16 @@
+ #include "webrtc/examples/peerconnection/client/defaults.h"
+ #include "webrtc/media/engine/webrtcvideocapturerfactory.h"
+ #include "webrtc/modules/video_capture/video_capture_factory.h"
++#include "webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h"
++
++#if !USEOPENH264 && !USEX264
++#include "webrtc/examples/peerconnection/client/h264videocapturer.h"
++#else
++#include "webrtc/examples/peerconnection/client/yuvvideocapturer.h"
++#endif
++
++#define DL_RTPMAP 0
++#define CONSTRAINT 1
+ 
+ // Names used for a IceCandidate JSON object.
+ const char kCandidateSdpMidName[] = "sdpMid";
+@@ -34,6 +47,14 @@ const char kSessionDescriptionSdpName[] = "sdp";
+ #define DTLS_ON  true
+ #define DTLS_OFF false
+ 
++void RemoveLine(std::string& source, const std::string& to_remove, int offset)
++{
++  size_t nFPos = source.find(to_remove,offset);
++  size_t secondNL = source.find('\n', nFPos);
++  size_t firstNL = source.rfind('\n', nFPos);
++  source.erase(firstNL, secondNL - firstNL);
++}
++
+ class DummySetSessionDescriptionObserver
+     : public webrtc::SetSessionDescriptionObserver {
+  public:
+@@ -105,7 +126,9 @@ bool Conductor::ReinitializePeerConnectionForLoopback() {
+   if (CreatePeerConnection(DTLS_OFF)) {
+     for (size_t i = 0; i < streams->count(); ++i)
+       peer_connection_->AddStream(streams->at(i));
+-    peer_connection_->CreateOffer(this, NULL);
++
++  webrtc::FakeConstraints constraints;
++    peer_connection_->CreateOffer(this, &constraints);
+   }
+   return peer_connection_.get() != NULL;
+ }
+@@ -127,7 +150,6 @@ bool Conductor::CreatePeerConnection(bool dtls) {
+     constraints.AddOptional(webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
+                             "false");
+   }
+-
+   peer_connection_ = peer_connection_factory_->CreatePeerConnection(
+       config, &constraints, NULL, NULL, this);
+   return peer_connection_.get() != NULL;
+@@ -188,6 +210,7 @@ void Conductor::OnIceCandidate(const webrtc::IceCandidateInterface* candidate) {
+     LOG(LS_ERROR) << "Failed to serialize candidate";
+     return;
+   }
++
+   jmessage[kCandidateSdpName] = sdp;
+   SendMessage(writer.write(jmessage));
+ }
+@@ -277,6 +300,7 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
+       LOG(WARNING) << "Can't parse received session description message.";
+       return;
+     }
++
+     webrtc::SdpParseError error;
+     webrtc::SessionDescriptionInterface* session_description(
+         webrtc::CreateSessionDescription(type, sdp, &error));
+@@ -290,7 +314,9 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
+         DummySetSessionDescriptionObserver::Create(), session_description);
+     if (session_description->type() ==
+         webrtc::SessionDescriptionInterface::kOffer) {
+-      peer_connection_->CreateAnswer(this, NULL);
++
++      webrtc::FakeConstraints constraints;
++      peer_connection_->CreateAnswer(this, &constraints);
+     }
+     return;
+   } else {
+@@ -305,6 +331,7 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
+       LOG(WARNING) << "Can't parse received message.";
+       return;
+     }
++
+     webrtc::SdpParseError error;
+     std::unique_ptr<webrtc::IceCandidateInterface> candidate(
+         webrtc::CreateIceCandidate(sdp_mid, sdp_mlineindex, sdp, &error));
+@@ -336,10 +363,11 @@ void Conductor::OnServerConnectionFailure() {
+ // MainWndCallback implementation.
+ //
+ 
+-void Conductor::StartLogin(const std::string& server, int port) {
++void Conductor::StartLogin(const std::string& server, int port, const std::string& video_url) {
+   if (client_->is_connected())
+     return;
+   server_ = server;
++  video_url_ = video_url;
+   client_->Connect(server, port, GetPeerName());
+ }
+ 
+@@ -360,7 +388,9 @@ void Conductor::ConnectToPeer(int peer_id) {
+ 
+   if (InitializePeerConnection()) {
+     peer_id_ = peer_id;
+-    peer_connection_->CreateOffer(this, NULL);
++
++  webrtc::FakeConstraints constraints;
++    peer_connection_->CreateOffer(this, &constraints);
+   } else {
+     main_wnd_->MessageBox("Error", "Failed to initialize PeerConnection", true);
+   }
+@@ -404,11 +434,16 @@ void Conductor::AddStreams() {
+       peer_connection_factory_->CreateAudioTrack(
+           kAudioLabel, peer_connection_factory_->CreateAudioSource(NULL)));
+ 
++  webrtc::FakeConstraints constraints;
++  constraints.SetMandatoryMaxFrameRate(60);
++
++  cricket::VideoCapturer* capturer = NULL;
++  capturer = new RawVideoCapturer(video_url_);
+   rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track(
+       peer_connection_factory_->CreateVideoTrack(
+           kVideoLabel,
+-          peer_connection_factory_->CreateVideoSource(OpenVideoCaptureDevice(),
+-                                                      NULL)));
++          peer_connection_factory_->CreateVideoSource(capturer,
++                                                      &constraints)));
+   main_wnd_->StartLocalRenderer(video_track);
+ 
+   rtc::scoped_refptr<webrtc::MediaStreamInterface> stream =
+@@ -432,7 +467,7 @@ void Conductor::DisconnectFromCurrentPeer() {
+     client_->SendHangUp(peer_id_);
+     DeletePeerConnection();
+   }
+-
++#include <iostream>
+   if (main_wnd_->IsWindow())
+     main_wnd_->SwitchToPeerList(client_->peers());
+ }
+diff --git a/webrtc/examples/peerconnection/client/conductor.h b/webrtc/examples/peerconnection/client/conductor.h
+index 74e5f6c..9d448f6 100644
+--- a/webrtc/examples/peerconnection/client/conductor.h
++++ b/webrtc/examples/peerconnection/client/conductor.h
+@@ -102,7 +102,7 @@ class Conductor
+   // MainWndCallback implementation.
+   //
+ 
+-  virtual void StartLogin(const std::string& server, int port);
++  virtual void StartLogin(const std::string& server, int port, const std::string& video_url);
+ 
+   virtual void DisconnectFromServer();
+ 
+@@ -131,6 +131,7 @@ class Conductor
+   std::map<std::string, rtc::scoped_refptr<webrtc::MediaStreamInterface> >
+       active_streams_;
+   std::string server_;
++  std::string video_url_;
+ };
+ 
+ #endif  // WEBRTC_EXAMPLES_PEERCONNECTION_CLIENT_CONDUCTOR_H_
+diff --git a/webrtc/examples/peerconnection/client/flagdefs.h b/webrtc/examples/peerconnection/client/flagdefs.h
+index 92e2773..e9ea492 100644
+--- a/webrtc/examples/peerconnection/client/flagdefs.h
++++ b/webrtc/examples/peerconnection/client/flagdefs.h
+@@ -29,5 +29,6 @@ DEFINE_int(port, kDefaultServerPort,
+ DEFINE_bool(autocall, false, "Call the first available other client on "
+   "the server without user intervention.  Note: this flag should only be set "
+   "to true on one of the two clients.");
++DEFINE_string(video_url, "parking_264.mpeg", "The URL to get an H264 video stream.");
+ 
+ #endif  // WEBRTC_EXAMPLES_PEERCONNECTION_CLIENT_FLAGDEFS_H_
+diff --git a/webrtc/examples/peerconnection/client/linux/main.cc b/webrtc/examples/peerconnection/client/linux/main.cc
+index 4db929c..73e1293 100644
+--- a/webrtc/examples/peerconnection/client/linux/main.cc
++++ b/webrtc/examples/peerconnection/client/linux/main.cc
+@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
+     return -1;
+   }
+ 
+-  GtkMainWnd wnd(FLAG_server, FLAG_port, FLAG_autoconnect, FLAG_autocall);
++  GtkMainWnd wnd(FLAG_server,FLAG_video_url, FLAG_port, FLAG_autoconnect, FLAG_autocall);
+   wnd.Create();
+ 
+   rtc::AutoThread auto_thread;
+diff --git a/webrtc/examples/peerconnection/client/linux/main_wnd.cc b/webrtc/examples/peerconnection/client/linux/main_wnd.cc
+index eda6617..bd4aeb8 100644
+--- a/webrtc/examples/peerconnection/client/linux/main_wnd.cc
++++ b/webrtc/examples/peerconnection/client/linux/main_wnd.cc
+@@ -125,11 +125,11 @@ gboolean Redraw(gpointer data) {
+ // GtkMainWnd implementation.
+ //
+ 
+-GtkMainWnd::GtkMainWnd(const char* server, int port, bool autoconnect,
++GtkMainWnd::GtkMainWnd(const char* server, const char* video_url, int port, bool autoconnect,
+                        bool autocall)
+     : window_(NULL), draw_area_(NULL), vbox_(NULL), server_edit_(NULL),
+       port_edit_(NULL), peer_list_(NULL), callback_(NULL),
+-      server_(server), autoconnect_(autoconnect), autocall_(autocall) {
++      server_(server), video_url_(video_url), autoconnect_(autoconnect), autocall_(autocall) {
+   char buffer[10];
+   sprintfn(buffer, sizeof(buffer), "%i", port);
+   port_ = buffer;
+@@ -340,7 +340,7 @@ void GtkMainWnd::OnClicked(GtkWidget* widget) {
+   server_ = gtk_entry_get_text(GTK_ENTRY(server_edit_));
+   port_ = gtk_entry_get_text(GTK_ENTRY(port_edit_));
+   int port = port_.length() ? atoi(port_.c_str()) : 0;
+-  callback_->StartLogin(server_, port);
++  callback_->StartLogin(server_, port, video_url_);
+ }
+ 
+ void GtkMainWnd::OnKeyPress(GtkWidget* widget, GdkEventKey* key) {
+@@ -495,7 +495,7 @@ void GtkMainWnd::VideoRenderer::OnFrame(
+ 
+   rtc::scoped_refptr<webrtc::VideoFrameBuffer> buffer(
+       frame.video_frame_buffer());
+-  libyuv::I420ToRGBA(buffer->DataY(), buffer->StrideY(),
++  libyuv::I420ToABGR(buffer->DataY(), buffer->StrideY(),
+                      buffer->DataU(), buffer->StrideU(),
+                      buffer->DataV(), buffer->StrideV(),
+                      image_.get(), width_ * 4,
+diff --git a/webrtc/examples/peerconnection/client/linux/main_wnd.h b/webrtc/examples/peerconnection/client/linux/main_wnd.h
+index 3c71857..d537180 100644
+--- a/webrtc/examples/peerconnection/client/linux/main_wnd.h
++++ b/webrtc/examples/peerconnection/client/linux/main_wnd.h
+@@ -30,7 +30,7 @@ typedef struct _GtkTreeViewColumn GtkTreeViewColumn;
+ // implementation.
+ class GtkMainWnd : public MainWindow {
+  public:
+-  GtkMainWnd(const char* server, int port, bool autoconnect, bool autocall);
++  GtkMainWnd(const char* server,const char* video_url, int port, bool autoconnect, bool autocall);
+   ~GtkMainWnd();
+ 
+   virtual void RegisterObserver(MainWndCallback* callback);
+@@ -109,6 +109,7 @@ class GtkMainWnd : public MainWindow {
+   GtkWidget* peer_list_;  // The list of peers.
+   MainWndCallback* callback_;
+   std::string server_;
++  std::string video_url_;
+   std::string port_;
+   bool autoconnect_;
+   bool autocall_;
+diff --git a/webrtc/examples/peerconnection/client/main_wnd.h b/webrtc/examples/peerconnection/client/main_wnd.h
+index 03db80d..e0eae46 100644
+--- a/webrtc/examples/peerconnection/client/main_wnd.h
++++ b/webrtc/examples/peerconnection/client/main_wnd.h
+@@ -25,7 +25,7 @@
+ 
+ class MainWndCallback {
+  public:
+-  virtual void StartLogin(const std::string& server, int port) = 0;
++  virtual void StartLogin(const std::string& server,int port, const std::string& video_url) = 0;
+   virtual void DisconnectFromServer() = 0;
+   virtual void ConnectToPeer(int peer_id) = 0;
+   virtual void DisconnectFromCurrentPeer() = 0;
+diff --git a/webrtc/media/engine/webrtcvideoengine2.cc b/webrtc/media/engine/webrtcvideoengine2.cc
+index 60f51be..1e12be8 100644
+--- a/webrtc/media/engine/webrtcvideoengine2.cc
++++ b/webrtc/media/engine/webrtcvideoengine2.cc
+@@ -360,9 +360,13 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
+     rtx_payload_type = kDefaultRtxVp9PlType;
+   } else if (CodecNamesEq(codec.name, kH264CodecName)) {
+     rtx_payload_type = kDefaultRtxH264PlType;
+-  } else if (CodecNamesEq(codec.name, kRedCodecName)) {
++  } 
++#if 0
++else if (CodecNamesEq(codec.name, kRedCodecName)) {
+     rtx_payload_type = kDefaultRtxRedPlType;
+-  } else {
++  } 
++#endif
++else {
+     return;
+   }
+   codecs->push_back(VideoCodec::CreateRtxCodec(rtx_payload_type, codec.id));
+@@ -370,6 +374,7 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
+ 
+ std::vector<VideoCodec> DefaultVideoCodecList() {
+   std::vector<VideoCodec> codecs;
++#if 0
+   AddCodecAndMaybeRtxCodec(
+       MakeVideoCodecWithDefaultFeedbackParams(kDefaultVp8PlType, kVp8CodecName),
+       &codecs);
+@@ -378,6 +383,7 @@ std::vector<VideoCodec> DefaultVideoCodecList() {
+                                  kDefaultVp9PlType, kVp9CodecName),
+                              &codecs);
+   }
++#endif
+   if (CodecIsInternallySupported(kH264CodecName)) {
+     VideoCodec codec = MakeVideoCodecWithDefaultFeedbackParams(
+         kDefaultH264PlType, kH264CodecName);
+@@ -392,9 +398,11 @@ std::vector<VideoCodec> DefaultVideoCodecList() {
+     codec.SetParam(kH264FmtpPacketizationMode, "1");
+     AddCodecAndMaybeRtxCodec(codec, &codecs);
+   }
++#if 0
+   AddCodecAndMaybeRtxCodec(VideoCodec(kDefaultRedPlType, kRedCodecName),
+                            &codecs);
+   codecs.push_back(VideoCodec(kDefaultUlpfecType, kUlpfecCodecName));
++#endif
+   return codecs;
+ }
+ 
+diff --git a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc
+index bbf1ee1..9c4a384 100644
+--- a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc
++++ b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc
+@@ -77,7 +77,9 @@ void InitializeFFmpeg() {
+       RTC_NOTREACHED() << "av_lockmgr_register failed.";
+       return;
+     }
++    avcodec_register_all();
+     av_register_all();
++    avformat_network_init();
+     ffmpeg_initialized = true;
+   }
+ }
+@@ -86,6 +88,10 @@ void InitializeFFmpeg() {
+ 
+ }  // namespace
+ 
++void H264DecoderImpl::InitFFmpeg() {
++  InitializeFFmpeg();
++}
++
+ int H264DecoderImpl::AVGetBuffer2(
+     AVCodecContext* context, AVFrame* av_frame, int flags) {
+   // Set in |InitDecode|.
+diff --git a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h
+index fc730a4..bfeac6c 100644
+--- a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h
++++ b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h
+@@ -54,6 +54,8 @@ class H264DecoderImpl : public H264Decoder {
+ 
+   const char* ImplementationName() const override;
+ 
++  void InitFFmpeg();
++
+  private:
+   // Called by FFmpeg when it needs a frame buffer to store decoded frames in.
+   // The |VideoFrame| returned by FFmpeg at |Decode| originate from here. Their
+diff --git a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
+index bba30a3..ebc3cc6 100644
+--- a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
++++ b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
+@@ -10,23 +10,50 @@
+  */
+ 
+ #include "webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h"
++#include "webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h"
++
++#include "webrtc/common_video/h264/h264_common.h"
+ 
+ #include <limits>
+ 
++
++#if USEOPENH264 
+ #include "third_party/openh264/src/codec/api/svc/codec_api.h"
+ #include "third_party/openh264/src/codec/api/svc/codec_app_def.h"
+ #include "third_party/openh264/src/codec/api/svc/codec_def.h"
+ 
++#elif USEX264
++//#define __STDC_CONSTANT_MACROS
++//x264 and ffmpeg headers
++extern "C"
++{
++	#include "third_party/x264/x264.h"
++	#include "third_party/ffmpeg/libavcodec/avcodec.h"
++	#include "third_party/ffmpeg/libavformat/avformat.h"
++	#include "third_party/ffmpeg/libswscale/swscale.h"
++}
++#endif
++
++
+ #include "webrtc/base/checks.h"
+ #include "webrtc/base/logging.h"
+ #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+ #include "webrtc/system_wrappers/include/metrics.h"
+ 
++#include <memory>
++#include <utility>
++#include <vector>
++#include <iostream>
++#include <fstream>
++#include "webrtc/base/thread.h"
++#include "webrtc/base/bind.h"
++#include "webrtc/base/asyncinvoker.h"
++
++
+ namespace webrtc {
+ 
+ namespace {
+ 
+-const bool kOpenH264EncoderDetailedLogging = false;
+ 
+ // Used by histograms. Values of entries should not be changed.
+ enum H264EncoderImplEvent {
+@@ -35,6 +62,9 @@ enum H264EncoderImplEvent {
+   kH264EncoderEventMax = 16,
+ };
+ 
++#if USEOPENH264
++const bool kOpenH264EncoderDetailedLogging = false;
++
+ int NumberOfThreads(int width, int height, int number_of_cores) {
+   // TODO(hbos): In Chromium, multiple threads do not work with sandbox on Mac,
+   // see crbug.com/583348. Until further investigated, only use one thread.
+@@ -65,9 +95,10 @@ FrameType ConvertToVideoFrameType(EVideoFrameType type) {
+   RTC_NOTREACHED() << "Unexpected/invalid frame type: " << type;
+   return kEmptyFrame;
+ }
+-
++#endif
+ }  // namespace
+ 
++#if USEOPENH264
+ // Helper method used by H264EncoderImpl::Encode.
+ // Copies the encoded bytes from |info| to |encoded_image| and updates the
+ // fragmentation information of |frag_header|. The |encoded_image->_buffer| may
+@@ -146,9 +177,16 @@ static void RtpFragmentize(EncodedImage* encoded_image,
+     encoded_image->_length += layer_len;
+   }
+ }
++#endif
+ 
+ H264EncoderImpl::H264EncoderImpl()
+-    : openh264_encoder_(nullptr),
++    : 
++#if USEOPENH264
++encoder_(nullptr),
++#elif USEX264
++encoder_(nullptr),
++nal(nullptr),
++#endif
+       encoded_image_callback_(nullptr),
+       has_reported_init_(false),
+       has_reported_error_(false) {
+@@ -181,32 +219,37 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
+     ReportError();
+     return release_ret;
+   }
+-  RTC_DCHECK(!openh264_encoder_);
++#if USEOPENH264 || USEX264
++  RTC_DCHECK(!encoder_);
++#endif
++  
++   codec_settings_ = *codec_settings;
+ 
++#if USEOPENH264
+   // Create encoder.
+-  if (WelsCreateSVCEncoder(&openh264_encoder_) != 0) {
++  if (WelsCreateSVCEncoder(&encoder_) != 0) {
+     // Failed to create encoder.
+     LOG(LS_ERROR) << "Failed to create OpenH264 encoder";
+-    RTC_DCHECK(!openh264_encoder_);
++    RTC_DCHECK(!encoder_);
+     ReportError();
+     return WEBRTC_VIDEO_CODEC_ERROR;
+   }
+-  RTC_DCHECK(openh264_encoder_);
++  RTC_DCHECK(encoder_);
+   if (kOpenH264EncoderDetailedLogging) {
+     int trace_level = WELS_LOG_DETAIL;
+-    openh264_encoder_->SetOption(ENCODER_OPTION_TRACE_LEVEL,
++    encoder_->SetOption(ENCODER_OPTION_TRACE_LEVEL,
+                                  &trace_level);
+   }
+   // else WELS_LOG_DEFAULT is used by default.
+ 
+   number_of_cores_ = number_of_cores;
+-  codec_settings_ = *codec_settings;
++ // codec_settings_ = *codec_settings;
+   if (codec_settings_.targetBitrate == 0)
+     codec_settings_.targetBitrate = codec_settings_.startBitrate;
+ 
+   SEncParamExt encoder_params = CreateEncoderParams();
+   // Initialize.
+-  if (openh264_encoder_->InitializeExt(&encoder_params) != 0) {
++  if (encoder_->InitializeExt(&encoder_params) != 0) {
+     LOG(LS_ERROR) << "Failed to initialize OpenH264 encoder";
+     Release();
+     ReportError();
+@@ -218,8 +261,84 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
+                        codec_settings_.startBitrate, codec_settings_.width,
+                        codec_settings_.height, codec_settings_.maxFramerate);
+   int video_format = EVideoFormatType::videoFormatI420;
+-  openh264_encoder_->SetOption(ENCODER_OPTION_DATAFORMAT,
++  encoder_->SetOption(ENCODER_OPTION_DATAFORMAT,
+                                &video_format);
++#elif USEX264
++                number_of_cores_ = number_of_cores;
++		/* Get default params for preset/tuning */
++		x264_param_t param;
++                int ret_val;
++		ret_val = x264_param_default_preset(&param, "medium", NULL);
++		if (ret_val != 0) {
++			/*WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
++				"H264EncoderImpl::InitEncode() fails to initialize encoder ret_val %d",
++				ret_val);*/
++			x264_encoder_close(encoder_);
++			encoder_ = NULL;
++			return WEBRTC_VIDEO_CODEC_ERROR;
++		}
++
++
++		/* Configure non-default params */
++		param.i_csp = X264_CSP_I420;
++		param.i_width = codec_settings->width;
++		param.i_height = codec_settings->height;
++		param.b_vfr_input = 0;
++		param.b_repeat_headers = 1;
++		param.b_annexb = 0;
++		param.i_bframe = 0;
++		param.rc.i_lookahead = 0;
++		param.b_sliced_threads=  1;
++		param.b_cabac = 0 ;
++		param.i_fps_den = 1;
++		param.i_fps_num = codec_settings->maxFramerate;
++		param.rc.i_bitrate = codec_settings->maxBitrate;
++		/* Apply profile restrictions. */
++		ret_val = x264_param_apply_profile(&param, "baseline");
++		if (ret_val != 0) {
++			/*WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
++				"H264EncoderImpl::InitEncode() fails to initialize encoder ret_val %d",
++				ret_val);*/
++			x264_encoder_close(encoder_);
++			encoder_ = NULL;
++			return WEBRTC_VIDEO_CODEC_ERROR;
++		}
++
++		ret_val = x264_picture_alloc(&pic, param.i_csp, param.i_width, param.i_height);
++		if (ret_val != 0) {
++			/*WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
++				"H264EncoderImpl::InitEncode() fails to initialize encoder ret_val %d",
++				ret_val);*/
++			x264_encoder_close(encoder_);
++			encoder_ = NULL;
++			return WEBRTC_VIDEO_CODEC_ERROR;
++		}
++
++		encoder_ = x264_encoder_open(&param);
++		if (!encoder_){
++			/*WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
++				"H264EncoderImpl::InitEncode() fails to initialize encoder ret_val %d",
++				ret_val);*/
++			x264_encoder_close(encoder_);
++			x264_picture_clean(&pic);
++			encoder_ = NULL;
++			return WEBRTC_VIDEO_CODEC_ERROR;
++		}
++
++        number_of_cores_ = number_of_cores;
++        //codec_settings_ = *codec_settings;
++        if (codec_settings_.targetBitrate == 0)
++          codec_settings_.targetBitrate = codec_settings_.startBitrate;
++
++#if 1
++        // TODO(pbos): Base init params on these values before submitting.
++        quality_scaler_.Init(QualityScaler::kLowH264QpThreshold,
++                             QualityScaler::kBadH264QpThreshold,
++                             codec_settings_.startBitrate, codec_settings_.width,
++                             codec_settings_.height, codec_settings_.maxFramerate);
++#endif
++
++#endif
+ 
+   // Initialize encoded image. Default buffer size: size of unencoded data.
+   encoded_image_._size = CalcBufferSize(
+@@ -234,11 +353,19 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
+ }
+ 
+ int32_t H264EncoderImpl::Release() {
+-  if (openh264_encoder_) {
+-    RTC_CHECK_EQ(0, openh264_encoder_->Uninitialize());
+-    WelsDestroySVCEncoder(openh264_encoder_);
+-    openh264_encoder_ = nullptr;
++#if USEOPENH264
++  if (encoder_) {
++    RTC_CHECK_EQ(0, encoder_->Uninitialize());
++    WelsDestroySVCEncoder(encoder_);
++    encoder_ = nullptr;
+   }
++#elif USEX264
++  if (encoder_) {
++    x264_encoder_close(encoder_);
++    encoder_ = nullptr;
++  }
++#endif
++
+   encoded_image_._buffer = nullptr;
+   encoded_image_buffer_.reset();
+   return WEBRTC_VIDEO_CODEC_OK;
+@@ -257,22 +384,25 @@ int32_t H264EncoderImpl::SetRates(uint32_t bitrate, uint32_t framerate) {
+   codec_settings_.targetBitrate = bitrate;
+   codec_settings_.maxFramerate = framerate;
+   quality_scaler_.ReportFramerate(framerate);
+-
++#if USEOPENH264
+   SBitrateInfo target_bitrate;
+   memset(&target_bitrate, 0, sizeof(SBitrateInfo));
+   target_bitrate.iLayer = SPATIAL_LAYER_ALL,
+   target_bitrate.iBitrate = codec_settings_.targetBitrate * 1000;
+-  openh264_encoder_->SetOption(ENCODER_OPTION_BITRATE,
++
++  encoder_->SetOption(ENCODER_OPTION_BITRATE,
+                                &target_bitrate);
+   float max_framerate = static_cast<float>(codec_settings_.maxFramerate);
+-  openh264_encoder_->SetOption(ENCODER_OPTION_FRAME_RATE,
++  encoder_->SetOption(ENCODER_OPTION_FRAME_RATE,
+                                &max_framerate);
++#endif
+   return WEBRTC_VIDEO_CODEC_OK;
+ }
+ 
+ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+                                 const CodecSpecificInfo* codec_specific_info,
+                                 const std::vector<FrameType>* frame_types) {
++  
+   if (!IsInitialized()) {
+     ReportError();
+     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
+@@ -288,9 +418,12 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
+   }
+ 
++
++#if USEOPENH264 || USEX264
+   quality_scaler_.OnEncodeFrame(input_frame.width(), input_frame.height());
+   rtc::scoped_refptr<const VideoFrameBuffer> frame_buffer =
+       quality_scaler_.GetScaledBuffer(input_frame.video_frame_buffer());
++  
+   if (frame_buffer->width() != codec_settings_.width ||
+       frame_buffer->height() != codec_settings_.height) {
+     LOG(LS_INFO) << "Encoder reinitialized from " << codec_settings_.width
+@@ -298,10 +431,17 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+                  << frame_buffer->width() << "x" << frame_buffer->height();
+     codec_settings_.width = frame_buffer->width();
+     codec_settings_.height = frame_buffer->height();
++
++
++#if USEOPENH264
+     SEncParamExt encoder_params = CreateEncoderParams();
+-    openh264_encoder_->SetOption(ENCODER_OPTION_SVC_ENCODE_PARAM_EXT,
++    encoder_->SetOption(ENCODER_OPTION_SVC_ENCODE_PARAM_EXT,
+                                  &encoder_params);
++#endif
+   }
++#else
++  rtc::scoped_refptr<const VideoFrameBuffer> frame_buffer = input_frame.video_frame_buffer();
++#endif
+ 
+   bool force_key_frame = false;
+   if (frame_types != nullptr) {
+@@ -318,9 +458,36 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+     // API doc says ForceIntraFrame(false) does nothing, but calling this
+     // function forces a key frame regardless of the |bIDR| argument's value.
+     // (If every frame is a key frame we get lag/delays.)
+-    openh264_encoder_->ForceIntraFrame(true);
++#if USEOPENH264
++    encoder_->ForceIntraFrame(true);
++#elif USEX264
++    pic.b_keyframe = true;
++#endif
+   }
+ 
++#if USEX264
++		/* Read input frame */
++		pic.img.plane[0] = const_cast<uint8_t*>(frame_buffer->DataY());
++		pic.img.plane[1] = const_cast<uint8_t*>(frame_buffer->DataU());
++		pic.img.plane[2] = const_cast<uint8_t*>(frame_buffer->DataV());
++		pic.i_pts = i_frame;
++
++		int i_nal = 0;
++		pic_out = pic;
++		nal = nullptr;
++		int i_frame_size = x264_encoder_encode(encoder_, &nal, &i_nal, &pic, &pic_out);
++		if (i_frame_size < 0)
++		{
++			/*WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCoding, -1,
++				"H264EncoderImpl::Encode() fails to encode %d",
++				i_frame_size);*/
++			x264_encoder_close(encoder_);
++			x264_picture_clean(&pic);
++			encoder_ = NULL;
++			return WEBRTC_VIDEO_CODEC_ERROR;
++		}
++
++#elif USEOPENH264
+   // EncodeFrame input.
+   SSourcePicture picture;
+   memset(&picture, 0, sizeof(SSourcePicture));
+@@ -340,13 +507,14 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+   memset(&info, 0, sizeof(SFrameBSInfo));
+ 
+   // Encode!
+-  int enc_ret = openh264_encoder_->EncodeFrame(&picture, &info);
++  int enc_ret = encoder_->EncodeFrame(&picture, &info);
+   if (enc_ret != 0) {
+     LOG(LS_ERROR) << "OpenH264 frame encoding failed, EncodeFrame returned "
+                   << enc_ret << ".";
+     ReportError();
+     return WEBRTC_VIDEO_CODEC_ERROR;
+   }
++#endif
+ 
+   encoded_image_._encodedWidth = frame_buffer->width();
+   encoded_image_._encodedHeight = frame_buffer->height();
+@@ -354,13 +522,77 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+   encoded_image_.ntp_time_ms_ = input_frame.ntp_time_ms();
+   encoded_image_.capture_time_ms_ = input_frame.render_time_ms();
+   encoded_image_.rotation_ = input_frame.rotation();
++
++#if USEOPENH264
+   encoded_image_._frameType = ConvertToVideoFrameType(info.eFrameType);
++#endif
+ 
+   // Split encoded image up into fragments. This also updates |encoded_image_|.
+   RTPFragmentationHeader frag_header;
++
++#if USEOPENH264
+   RtpFragmentize(&encoded_image_, &encoded_image_buffer_, *frame_buffer, &info,
+                  &frag_header);
+ 
++#elif USEX264	
++
++		if (i_frame_size)
++		{
++			if (i_nal == 0) {
++				return WEBRTC_VIDEO_CODEC_OK;
++			}
++			frag_header.VerifyAndAllocateFragmentationHeader(i_nal);
++
++			encoded_image_._length = 0;
++
++			uint32_t totalNaluIndex = 0;
++			for (int nal_index = 0; nal_index < i_nal; nal_index++)
++			{
++				uint32_t currentNaluSize = 0;
++				currentNaluSize = nal[nal_index].i_payload - 4; //i_frame_size
++				memcpy(encoded_image_._buffer + encoded_image_._length, nal[nal_index].p_payload + 4, currentNaluSize);//will add start code automatically
++				encoded_image_._length += currentNaluSize;
++
++				/*WEBRTC_TRACE(webrtc::kTraceApiCall, webrtc::kTraceVideoCoding, -1,
++					"H264EncoderImpl::Encode() nal_type %d, length:%d",
++					nal[nal_index].i_type, encoded_image_._length);*/
++
++				frag_header.fragmentationOffset[totalNaluIndex] = encoded_image_._length - currentNaluSize;
++				frag_header.fragmentationLength[totalNaluIndex] = currentNaluSize;
++				frag_header.fragmentationPlType[totalNaluIndex] = nal[nal_index].i_type;
++				frag_header.fragmentationTimeDiff[totalNaluIndex] = 0;
++				totalNaluIndex++;
++			}
++		}
++		i_frame++;
++#endif
++
++#if !USEOPENH264 && !USEX264
++
++  uint8_t * p_nal = const_cast<uint8_t*>(frame_buffer->DataY());
++  std::vector<H264::NaluIndex> NALUidx = H264::FindNaluIndices(p_nal , frame_buffer->width()*frame_buffer->height());
++  int i_nal = NALUidx.size()-1;
++  
++  frag_header.VerifyAndAllocateFragmentationHeader(i_nal);
++  //debug gdb: x/100bx p_nal
++  encoded_image_._length = 0;
++
++  uint32_t totalNaluIndex = 0;
++  for (int nal_index = 0; nal_index < i_nal; nal_index++)
++  {
++  	uint32_t currentNaluSize = 0;
++  	currentNaluSize = NALUidx[nal_index].payload_size; //i_frame_size
++  	memcpy(encoded_image_._buffer + encoded_image_._length, &p_nal[NALUidx[nal_index].payload_start_offset] , currentNaluSize);//will add start code automatically
++  	encoded_image_._length += currentNaluSize;
++
++  	frag_header.fragmentationOffset[totalNaluIndex] = encoded_image_._length - currentNaluSize;
++  	frag_header.fragmentationLength[totalNaluIndex] = currentNaluSize;
++  	frag_header.fragmentationPlType[totalNaluIndex] = H264::ParseNaluType(p_nal[NALUidx[nal_index].start_offset]);
++  	frag_header.fragmentationTimeDiff[totalNaluIndex] = 0;
++  	totalNaluIndex++;
++}
++#endif
++
+   // Encoder can skip frames to save bandwidth in which case
+   // |encoded_image_._length| == 0.
+   if (encoded_image_._length > 0) {
+@@ -369,15 +601,17 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+     codec_specific.codecType = kVideoCodecH264;
+     encoded_image_callback_->Encoded(encoded_image_, &codec_specific,
+                                      &frag_header);
+-
++#if USEOPENH264
+     // Parse and report QP.
+     h264_bitstream_parser_.ParseBitstream(encoded_image_._buffer,
+                                           encoded_image_._length);
+     int qp = -1;
+     if (h264_bitstream_parser_.GetLastSliceQp(&qp))
+       quality_scaler_.ReportQP(qp);
++#endif
+   } else {
+     quality_scaler_.ReportDroppedFrame();
++    //fprintf(stderr, "Report dropped frame");
+   }
+   return WEBRTC_VIDEO_CODEC_OK;
+ }
+@@ -386,19 +620,26 @@ const char* H264EncoderImpl::ImplementationName() const {
+   return "OpenH264";
+ }
+ 
++
+ bool H264EncoderImpl::IsInitialized() const {
+-  return openh264_encoder_ != nullptr;
++#if USEOPENH264 || USEX264
++  return encoder_ != nullptr;
++#else
++  return true;
++#endif
+ }
+ 
++
++#if USEOPENH264
+ // Initialization parameters.
+ // There are two ways to initialize. There is SEncParamBase (cleared with
+ // memset(&p, 0, sizeof(SEncParamBase)) used in Initialize, and SEncParamExt
+ // which is a superset of SEncParamBase (cleared with GetDefaultParams) used
+ // in InitializeExt.
+ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
+-  RTC_DCHECK(openh264_encoder_);
++  RTC_DCHECK(encoder_);
+   SEncParamExt encoder_params;
+-  openh264_encoder_->GetDefaultParams(&encoder_params);
++  encoder_->GetDefaultParams(&encoder_params);
+   if (codec_settings_.mode == kRealtimeVideo) {
+     encoder_params.iUsageType = CAMERA_VIDEO_REAL_TIME;
+   } else if (codec_settings_.mode == kScreensharing) {
+@@ -444,6 +685,7 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
+ 
+   return encoder_params;
+ }
++#endif
+ 
+ void H264EncoderImpl::ReportInit() {
+   if (has_reported_init_)
+@@ -472,8 +714,10 @@ int32_t H264EncoderImpl::SetPeriodicKeyFrames(bool enable) {
+   return WEBRTC_VIDEO_CODEC_OK;
+ }
+ 
++
+ void H264EncoderImpl::OnDroppedFrame() {
+   quality_scaler_.ReportDroppedFrame();
++  //fprintf(stderr, "Frame dropped");
+ }
+ 
+ }  // namespace webrtc
+diff --git a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h
+index c6014e6..79b6275 100644
+--- a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h
++++ b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h
+@@ -19,9 +19,25 @@
+ #include "webrtc/modules/video_coding/utility/h264_bitstream_parser.h"
+ #include "webrtc/modules/video_coding/utility/quality_scaler.h"
+ 
+-#include "third_party/openh264/src/codec/api/svc/codec_app_def.h"
++//#define USEOPENH264 1
++//#define USEX264 1
+ 
++#if USEOPENH264
++#include "third_party/openh264/src/codec/api/svc/codec_app_def.h"
+ class ISVCEncoder;
++#elif USEX264
++//#define __STDC_CONSTANT_MACROS
++//x264 and ffmpeg headers
++extern "C"
++{
++	#include "third_party/x264/x264.h"
++	#include "third_party/ffmpeg/libavcodec/avcodec.h"
++	#include "third_party/ffmpeg/libavformat/avformat.h"
++	#include "third_party/ffmpeg/libswscale/swscale.h"
++}
++#endif
++
++//class ISVCEncoder;
+ 
+ namespace webrtc {
+ 
+@@ -61,17 +77,33 @@ class H264EncoderImpl : public H264Encoder {
+ 
+  private:
+   bool IsInitialized() const;
+-  SEncParamExt CreateEncoderParams() const;
+ 
++#if USEOPENH264
++  SEncParamExt CreateEncoderParams() const;
++#endif
+   webrtc::H264BitstreamParser h264_bitstream_parser_;
+   QualityScaler quality_scaler_;
+   // Reports statistics with histograms.
+   void ReportInit();
+   void ReportError();
+ 
+-  ISVCEncoder* openh264_encoder_;
++#if USEOPENH264
++  ISVCEncoder* encoder_;
++#elif  USEX264
++  //x264
++  x264_picture_t pic;
++  x264_picture_t pic_out;
++  x264_t *encoder_;
++  int i_frame = 0;
++  x264_nal_t *nal;
++#endif
++
++
+   VideoCodec codec_settings_;
++
++#if USEOPENH264 || USEX264
+   int32_t number_of_cores_;
++#endif
+ 
+   EncodedImage encoded_image_;
+   std::unique_ptr<uint8_t[]> encoded_image_buffer_;
+diff --git a/webrtc/modules/video_coding/video_sender.cc b/webrtc/modules/video_coding/video_sender.cc
+index 0f2da58..f48ae86 100644
+--- a/webrtc/modules/video_coding/video_sender.cc
++++ b/webrtc/modules/video_coding/video_sender.cc
+@@ -266,6 +266,7 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
+   if (_encoder == nullptr)
+     return VCM_UNINITIALIZED;
+   SetEncoderParameters(encoder_params, encoder_has_internal_source);
++#if 0
+   if (_mediaOpt.DropFrame()) {
+     LOG(LS_VERBOSE) << "Drop Frame "
+                     << "target bitrate " << encoder_params.target_bitrate
+@@ -275,6 +276,7 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
+     _encoder->OnDroppedFrame();
+     return VCM_OK;
+   }
++#endif
+   // TODO(pbos): Make sure setting send codec is synchronized with video
+   // processing so frame size always matches.
+   if (!_codecDataBase.MatchesCurrentResolution(videoFrame.width(),
+diff --git a/webrtc/test/fuzzers/corpora/sdp-corpus/opera-1.sdp b/webrtc/test/fuzzers/corpora/sdp-corpus/opera-1.sdp
+index 42d15e8..b1a07dd 100644
+--- a/webrtc/test/fuzzers/corpora/sdp-corpus/opera-1.sdp
++++ b/webrtc/test/fuzzers/corpora/sdp-corpus/opera-1.sdp
+@@ -46,7 +46,6 @@ a=extmap:3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+ a=extmap:4 urn:3gpp:video-orientation
+ a=sendrecv
+ a=rtcp-mux
+-a=rtpmap:100 VP8/90000
+ a=rtcp-fb:100 ccm fir
+ a=rtcp-fb:100 nack
+ a=rtcp-fb:100 nack pli
+diff --git a/webrtc/test/fuzzers/corpora/sdp-corpus/opera-2.sdp b/webrtc/test/fuzzers/corpora/sdp-corpus/opera-2.sdp
+index 6ed4e3b..af02e40 100644
+--- a/webrtc/test/fuzzers/corpora/sdp-corpus/opera-2.sdp
++++ b/webrtc/test/fuzzers/corpora/sdp-corpus/opera-2.sdp
+@@ -42,7 +42,6 @@ a=extmap:3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+ a=extmap:4 urn:3gpp:video-orientation
+ a=recvonly
+ a=rtcp-mux
+-a=rtpmap:100 VP8/90000
+ a=rtcp-fb:100 ccm fir
+ a=rtcp-fb:100 nack
+ a=rtcp-fb:100 nack pli
+diff --git a/webrtc/video/video_loopback.cc b/webrtc/video/video_loopback.cc
+index 10998c8..c5fda31 100644
+--- a/webrtc/video/video_loopback.cc
++++ b/webrtc/video/video_loopback.cc
+@@ -68,7 +68,7 @@ int NumTemporalLayers() {
+ }
+ 
+ // Flags common with screenshare loopback, with equal default values.
+-DEFINE_string(codec, "VP8", "Video codec to use.");
++DEFINE_string(codec, "H264", "Video codec to use.");
+ std::string Codec() {
+   return static_cast<std::string>(FLAGS_codec);
+ }
+@@ -263,6 +263,7 @@ void Loopback() {
+ }
+ }  // namespace webrtc
+ 
++#if 1
+ int main(int argc, char* argv[]) {
+   ::testing::InitGoogleTest(&argc, argv);
+   google::ParseCommandLineFlags(&argc, &argv, true);
+@@ -271,3 +272,4 @@ int main(int argc, char* argv[]) {
+   webrtc::test::RunTest(webrtc::Loopback);
+   return 0;
+ }
++#endif
