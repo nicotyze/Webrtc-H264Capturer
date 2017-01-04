@@ -53,6 +53,7 @@ Third Party Libraries:
 		cd $WEBRTC_DIR/src/third_party/ffmpeg
 		mkdir build
 		./configure --enable-shared --disable-programs --disable-doc --prefix=$WEBRTC_DIR/src/third_party/ffmpeg/build --sysroot=$WEBRTC_DIR/src/build/linux/debian_wheezy_amd64-sysroot --cc=$WEBRTC_DIR/src/third_party/llvm-build/Release+Asserts/bin/clang --ld=$WEBRTC_DIR/src/third_party/llvm-build/Release+Asserts/bin/clang
+		make && make install
 		cp $WEBRTC_DIR/src/third_party/ffmpeg/build/lib/*   $WEBRTC_DIR/src/out/Default
 
  - Add shared libraries linking in Ninja files
