@@ -12,7 +12,9 @@
 #include <sstream>
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/common.h"
-
+#include <cstddef>
+#include <vector>
+#include <queue>
 #include "webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h"
 
 #define PKT_BUF_LEN 1
@@ -131,10 +133,14 @@ loop_exit:
 #endif
 
 h264FrameGenerator::h264FrameGenerator() {
-
+#if 1
   webrtc::H264DecoderImpl *tmp_264_dec = new webrtc::H264DecoderImpl;
   tmp_264_dec->InitFFmpeg(); // Register all formats and codecs --> done in h264_decoder_impl.cc (only once)
-
+#else
+    avcodec_register_all();
+    av_register_all();
+    avformat_network_init();
+#endif
 }
 h264FrameGenerator::~h264FrameGenerator() {
 }
@@ -210,7 +216,7 @@ int h264FrameGenerator::InitFfmpegSession(const char *in_f_name){
 
   return ret;
 }
-void h264FrameGenerator::GenerateNextFrame(uint8_t* frame_buffer) {
+int h264FrameGenerator::GenerateNextFrame(uint8_t* frame_buffer) {
   
 //######################### h264framegenerator ##############################################
 
@@ -218,8 +224,7 @@ void h264FrameGenerator::GenerateNextFrame(uint8_t* frame_buffer) {
   
   
 #if RCV
-  int size = width_ * height_;
-  memset(frame_buffer,0x00, size);
+  //int size = width_ * height_;
   int  pkt_offset=0;
   int64_t curr_time_stamp = 0;
   int64_t prev_time_stamp = 0;
@@ -266,11 +271,16 @@ pkt:
                 frame_buffer[pkt_offset+packet->size+3] = 0x01;
         pkt_offset+= packet->size;
         av_packet_unref(packet);
+
+        return pkt_offset+packet->size;
+
+
   }
  
 #else
-        int err ;
+        int errr, et ;
         err = GetNextFrame(pFormatCtx, pCodecCtx, videoStream,packet,frame_buffer);
+        return 0;//packet->size+4;
 #endif
 //########################################################################################################
 

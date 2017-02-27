@@ -313,9 +313,18 @@ index 03db80d..e0eae46 100644
    virtual void ConnectToPeer(int peer_id) = 0;
    virtual void DisconnectFromCurrentPeer() = 0;
 diff --git a/webrtc/media/engine/webrtcvideoengine2.cc b/webrtc/media/engine/webrtcvideoengine2.cc
-index 60f51be..1e12be8 100644
+index 60f51be..73fc282 100644
 --- a/webrtc/media/engine/webrtcvideoengine2.cc
 +++ b/webrtc/media/engine/webrtcvideoengine2.cc
+@@ -326,7 +326,7 @@ int GetDefaultVp9TemporalLayers() {
+ 
+ // Constants defined in webrtc/media/engine/constants.h
+ // TODO(pbos): Move these to a separate constants.cc file.
+-const int kMinVideoBitrate = 30;
++const int kMinVideoBitrate = 300000;
+ const int kStartVideoBitrate = 300;
+ 
+ const int kVideoMtu = 1200;
 @@ -360,9 +360,13 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
      rtx_payload_type = kDefaultRtxVp9PlType;
    } else if (CodecNamesEq(codec.name, kH264CodecName)) {
@@ -386,7 +395,9 @@ index bbf1ee1..9c4a384 100644
      AVCodecContext* context, AVFrame* av_frame, int flags) {
    // Set in |InitDecode|.
 diff --git a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h
-index fc730a4..bfeac6c 100644
+old mode 100644
+new mode 100755
+index fc730a4..bfeac6c
 --- a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h
 +++ b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h
 @@ -54,6 +54,8 @@ class H264DecoderImpl : public H264Decoder {
@@ -399,7 +410,9 @@ index fc730a4..bfeac6c 100644
    // Called by FFmpeg when it needs a frame buffer to store decoded frames in.
    // The |VideoFrame| returned by FFmpeg at |Decode| originate from here. Their
 diff --git a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
-index bba30a3..ebc3cc6 100644
+old mode 100644
+new mode 100755
+index bba30a3..6457f7b
 --- a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
 +++ b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
 @@ -10,23 +10,50 @@
@@ -638,12 +651,12 @@ index bba30a3..ebc3cc6 100644
 +    RTC_CHECK_EQ(0, encoder_->Uninitialize());
 +    WelsDestroySVCEncoder(encoder_);
 +    encoder_ = nullptr;
-   }
++  }
 +#elif USEX264
 +  if (encoder_) {
 +    x264_encoder_close(encoder_);
 +    encoder_ = nullptr;
-+  }
+   }
 +#endif
 +
    encoded_image_._buffer = nullptr;
@@ -764,7 +777,7 @@ index bba30a3..ebc3cc6 100644
  
    encoded_image_._encodedWidth = frame_buffer->width();
    encoded_image_._encodedHeight = frame_buffer->height();
-@@ -354,13 +522,77 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -354,13 +522,95 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
    encoded_image_.ntp_time_ms_ = input_frame.ntp_time_ms();
    encoded_image_.capture_time_ms_ = input_frame.render_time_ms();
    encoded_image_.rotation_ = input_frame.rotation();
@@ -815,9 +828,25 @@ index bba30a3..ebc3cc6 100644
 +
 +#if !USEOPENH264 && !USEX264
 +
-+  uint8_t * p_nal = const_cast<uint8_t*>(frame_buffer->DataY());
-+  std::vector<H264::NaluIndex> NALUidx = H264::FindNaluIndices(p_nal , frame_buffer->width()*frame_buffer->height());
-+  int i_nal = NALUidx.size()-1;
++  uint8_t * p_nal = const_cast<uint8_t*>(frame_buffer->DataY())+4;
++  uint32_t * p_size;
++  int i_nal ;
++  std::vector<H264::NaluIndex> NALUidx;
++  p_size = (uint32_t*)(frame_buffer->DataY()) ;
++
++  if( (p_nal[4] & 0x0F) != 0x07){
++    NALUidx = H264::FindNaluIndices(p_nal , 5);
++    NALUidx[0].payload_size = p_size[0]-NALUidx[0].payload_start_offset;
++    //NALUidx[0].payload_start_offset = 4;
++    //NALUidx[0].start_offset = 0;
++    i_nal = 1;
++  }
++  else{
++    NALUidx = H264::FindNaluIndices(p_nal , /*p_size[0]*/200); // 200 Bytes is an estimation of the maximum size of SPS/PPS NAL units
++    i_nal = NALUidx.size();
++    if( i_nal > 2 )
++      NALUidx[i_nal-1].payload_size = p_size[0]  -  NALUidx[i_nal-1].payload_start_offset ;
++  }
 +  
 +  frag_header.VerifyAndAllocateFragmentationHeader(i_nal);
 +  //debug gdb: x/100bx p_nal
@@ -837,12 +866,14 @@ index bba30a3..ebc3cc6 100644
 +  	frag_header.fragmentationTimeDiff[totalNaluIndex] = 0;
 +  	totalNaluIndex++;
 +}
++
 +#endif
 +
++#if 1
    // Encoder can skip frames to save bandwidth in which case
    // |encoded_image_._length| == 0.
    if (encoded_image_._length > 0) {
-@@ -369,15 +601,17 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -369,16 +619,19 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
      codec_specific.codecType = kVideoCodecH264;
      encoded_image_callback_->Encoded(encoded_image_, &codec_specific,
                                       &frag_header);
@@ -859,9 +890,11 @@ index bba30a3..ebc3cc6 100644
      quality_scaler_.ReportDroppedFrame();
 +    //fprintf(stderr, "Report dropped frame");
    }
++#endif
    return WEBRTC_VIDEO_CODEC_OK;
  }
-@@ -386,19 +620,26 @@ const char* H264EncoderImpl::ImplementationName() const {
+ 
+@@ -386,19 +639,26 @@ const char* H264EncoderImpl::ImplementationName() const {
    return "OpenH264";
  }
  
@@ -891,7 +924,7 @@ index bba30a3..ebc3cc6 100644
    if (codec_settings_.mode == kRealtimeVideo) {
      encoder_params.iUsageType = CAMERA_VIDEO_REAL_TIME;
    } else if (codec_settings_.mode == kScreensharing) {
-@@ -444,6 +685,7 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
+@@ -444,6 +704,7 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
  
    return encoder_params;
  }
@@ -899,7 +932,7 @@ index bba30a3..ebc3cc6 100644
  
  void H264EncoderImpl::ReportInit() {
    if (has_reported_init_)
-@@ -472,8 +714,10 @@ int32_t H264EncoderImpl::SetPeriodicKeyFrames(bool enable) {
+@@ -472,8 +733,10 @@ int32_t H264EncoderImpl::SetPeriodicKeyFrames(bool enable) {
    return WEBRTC_VIDEO_CODEC_OK;
  }
  
@@ -1047,3 +1080,16 @@ index 10998c8..c5fda31 100644
    return 0;
  }
 +#endif
+diff --git a/webrtc/video/vie_encoder.cc b/webrtc/video/vie_encoder.cc
+index 118959e..557bd69 100644
+--- a/webrtc/video/vie_encoder.cc
++++ b/webrtc/video/vie_encoder.cc
+@@ -141,7 +141,7 @@ VideoCodec VideoEncoderConfigToVideoCodec(const VideoEncoderConfig& config,
+     // Different framerates not supported per stream at the moment.
+     RTC_DCHECK_EQ(streams[i].max_framerate, streams[0].max_framerate);
+     RTC_DCHECK_GE(streams[i].min_bitrate_bps, 0);
+-    RTC_DCHECK_GE(streams[i].target_bitrate_bps, streams[i].min_bitrate_bps);
++    //RTC_DCHECK_GE(streams[i].target_bitrate_bps, streams[i].min_bitrate_bps);
+     RTC_DCHECK_GE(streams[i].max_bitrate_bps, streams[i].target_bitrate_bps);
+     RTC_DCHECK_GE(streams[i].max_qp, 0);
+ 

@@ -14,6 +14,7 @@
 #include "webrtc/base/bind.h"
 #include "webrtc/base/asyncinvoker.h"
 #include "webrtc/media/base/videocapturer.h"
+#include "webrtc/media/engine/webrtcvideoframefactory.h"
 #include "webrtc/examples/peerconnection/client/h264framegenerator.h"
 #include "webrtc/examples/peerconnection/client/h264framegenerator.cc"
 
@@ -36,13 +37,13 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 			if( frame_generator_->InitFfmpegSession(in_f_name.c_str())!= 0)
 				fprintf(stderr,"########### Problem in FFMPEG initialization...#########");
 
-			width_ = frame_generator_->getFrameWidth();
-			height_ = frame_generator_->getFrameHeight();
+			//width_ = frame_generator_->getFrameWidth();
+			//height_ = frame_generator_->getFrameHeight();
 			frameRate_ = frame_generator_->getFrameRate();
-			int size = width_ * height_;
-			int qsize = size / 4;
+			//int size = width_ * height_;
+			//int qsize = size / 4;
 
-			frame_data_size_ = size + 2 * qsize;
+			frame_data_size_ = 999999;//size + 2 * qsize;
 			captured_frame_.data = new char[frame_data_size_];
 			captured_frame_.fourcc = cricket::FOURCC_IYUV;
 			captured_frame_.pixel_height = 1;
@@ -64,34 +65,39 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 
 		void SignalFrameCapturedOnStartThread() 
 		{
-			std::cout << "===========================RawVideoCapturer::SignalFrameCapturedOnStartThread" << std::endl;
+
 			SignalFrameCaptured(this, &captured_frame_);
-			std::cout << "===========================RawVideoCapturer::SignalFrameCapturedOnStartThread" << std::endl;			
+
 		}
 		
 		void Run()
 		{
-			std::cout << "===========================RawVideoCapturer::mainloop" << std::endl;
+			int nalu_size=0;
+
 			while(IsRunning())
 			{
-				uint8_t* buffer = new uint8_t[frame_data_size_];
-				frame_generator_->GenerateNextFrame(buffer);
+				nalu_size = frame_generator_->GenerateNextFrame((uint8_t*)captured_frame_.data+4);
+
 				frame_index_++;
-				memmove(captured_frame_.data, buffer, frame_data_size_);
-				delete[] buffer;			
-				
+				uint32_t * p_size;
+				p_size = (uint32_t*)captured_frame_.data;
+				*p_size = nalu_size;
+
+
 				async_invoker_->AsyncInvoke<void>( RTC_FROM_HERE,
 					start_thread_,
 					rtc::Bind(&RawVideoCapturer::SignalFrameCapturedOnStartThread, this));
+
 				if( !frame_generator_->isStreamed() ){
 				  ProcessMessages(1000./frameRate_);
 				}
+
 			}
 		}
 				
 		virtual cricket::CaptureState Start(const cricket::VideoFormat& format) 
 		{
-			std::cout << "===========================RawVideoCapturer::Start" << std::endl;
+			//std::cout << "===========================RawVideoCapturer::Start" << std::endl;
 			start_thread_ = rtc::Thread::Current();
 			async_invoker_.reset(new rtc::AsyncInvoker());
 			

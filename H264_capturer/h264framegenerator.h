@@ -63,7 +63,7 @@ int GetNextFrame(AVFormatContext *pFormatCtx, AVCodecContext *pCodecCtx,
   // into a barcode in the frame.  The value should in the range:
   // [0..9,999,999]. If the value exceeds this range or barcodes were not
   // requested in the constructor, this function will abort.
-  void GenerateNextFrame(uint8_t* frame_buffer);
+  int GenerateNextFrame(uint8_t* frame_buffer);
   void SetStreamingMode(bool b_isStreaming ){rcv_th_data.b_streaming = b_isStreaming;} 
   bool isStreamed(){return rcv_th_data.b_streaming;}
   int getFrameWidth(){return width_;}
