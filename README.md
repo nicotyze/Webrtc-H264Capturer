@@ -4,7 +4,7 @@ Webrtc-H264Capturer
 Workarounds to use external H.264 video encoders in WebRTC Native C++ source code.   
 A fake YUV capturer is used to write the H.264 elementary stream. Then, H.264 encoding (OpenH264) is bypassed and the elementary stream is directly packetized.
 
-Alternatively, the patch allows to compile Webrtc Native with x264 support (instead of OpenH264). 
+Alternatively, the patch allows to compile WebRTC Native with x264 support (instead of OpenH264). 
 
 A web client is also provided in order to perform video streaming between WebRTC Native C++ and a web browser.
 
@@ -85,4 +85,5 @@ Launch the client with the external H.264 stream URL, e.g.:
 Connect with a second client, e.g.:   
 	
 	firefox Web_client/index.html
+*To allow the peerconnection to be initiated from the web client, firefox must be configured (about:config) with (integer) media.navigator.video.preferred_codec = 126*
 
