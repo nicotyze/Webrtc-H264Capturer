@@ -30,10 +30,10 @@ index 547a60f..ba36a97 100644
  
  SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
 diff --git a/webrtc/build/webrtc.gni b/webrtc/build/webrtc.gni
-index 71a4eda..9db8a90 100644
+index ac03959..19fa763 100644
 --- a/webrtc/build/webrtc.gni
 +++ b/webrtc/build/webrtc.gni
-@@ -114,7 +114,7 @@ declare_args() {
+@@ -113,7 +113,7 @@ declare_args() {
    # also: |rtc_initialize_ffmpeg|.
    # CHECK THE OPENH264, FFMPEG AND H.264 LICENSES/PATENTS BEFORE BUILDING.
    # http://www.openh264.org, https://www.ffmpeg.org/
@@ -313,19 +313,19 @@ index 03db80d..e0eae46 100644
    virtual void ConnectToPeer(int peer_id) = 0;
    virtual void DisconnectFromCurrentPeer() = 0;
 diff --git a/webrtc/media/engine/webrtcvideoengine2.cc b/webrtc/media/engine/webrtcvideoengine2.cc
-index 60f51be..73fc282 100644
+index 86bf028..19bb128 100644
 --- a/webrtc/media/engine/webrtcvideoengine2.cc
 +++ b/webrtc/media/engine/webrtcvideoengine2.cc
-@@ -326,7 +326,7 @@ int GetDefaultVp9TemporalLayers() {
+@@ -399,7 +399,7 @@ class EncoderStreamFactory
  
  // Constants defined in webrtc/media/engine/constants.h
  // TODO(pbos): Move these to a separate constants.cc file.
--const int kMinVideoBitrate = 30;
-+const int kMinVideoBitrate = 300000;
- const int kStartVideoBitrate = 300;
+-const int kMinVideoBitrateKbps = 30;
++const int kMinVideoBitrateKbps = 30000;
  
  const int kVideoMtu = 1200;
-@@ -360,9 +360,13 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
+ const int kVideoRtpBufferSize = 65536;
+@@ -432,9 +432,13 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
      rtx_payload_type = kDefaultRtxVp9PlType;
    } else if (CodecNamesEq(codec.name, kH264CodecName)) {
      rtx_payload_type = kDefaultRtxH264PlType;
@@ -341,7 +341,7 @@ index 60f51be..73fc282 100644
      return;
    }
    codecs->push_back(VideoCodec::CreateRtxCodec(rtx_payload_type, codec.id));
-@@ -370,6 +374,7 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
+@@ -442,6 +446,7 @@ void AddCodecAndMaybeRtxCodec(const VideoCodec& codec,
  
  std::vector<VideoCodec> DefaultVideoCodecList() {
    std::vector<VideoCodec> codecs;
@@ -349,7 +349,7 @@ index 60f51be..73fc282 100644
    AddCodecAndMaybeRtxCodec(
        MakeVideoCodecWithDefaultFeedbackParams(kDefaultVp8PlType, kVp8CodecName),
        &codecs);
-@@ -378,6 +383,7 @@ std::vector<VideoCodec> DefaultVideoCodecList() {
+@@ -450,6 +455,7 @@ std::vector<VideoCodec> DefaultVideoCodecList() {
                                   kDefaultVp9PlType, kVp9CodecName),
                               &codecs);
    }
@@ -357,7 +357,7 @@ index 60f51be..73fc282 100644
    if (CodecIsInternallySupported(kH264CodecName)) {
      VideoCodec codec = MakeVideoCodecWithDefaultFeedbackParams(
          kDefaultH264PlType, kH264CodecName);
-@@ -392,9 +398,11 @@ std::vector<VideoCodec> DefaultVideoCodecList() {
+@@ -464,9 +470,11 @@ std::vector<VideoCodec> DefaultVideoCodecList() {
      codec.SetParam(kH264FmtpPacketizationMode, "1");
      AddCodecAndMaybeRtxCodec(codec, &codecs);
    }
@@ -370,7 +370,7 @@ index 60f51be..73fc282 100644
  }
  
 diff --git a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc
-index bbf1ee1..9c4a384 100644
+index d67a434..f594193 100644
 --- a/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc
 +++ b/webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.cc
 @@ -77,7 +77,9 @@ void InitializeFFmpeg() {
@@ -412,7 +412,7 @@ index fc730a4..bfeac6c
 diff --git a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
 old mode 100644
 new mode 100755
-index bba30a3..6457f7b
+index 3dfa0b5..cacfe79
 --- a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
 +++ b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.cc
 @@ -10,23 +10,50 @@
@@ -552,9 +552,9 @@ index bba30a3..6457f7b
      LOG(LS_ERROR) << "Failed to initialize OpenH264 encoder";
      Release();
      ReportError();
-@@ -218,8 +261,84 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
-                        codec_settings_.startBitrate, codec_settings_.width,
-                        codec_settings_.height, codec_settings_.maxFramerate);
+@@ -217,8 +260,84 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
+                        codec_settings_.width, codec_settings_.height,
+                        codec_settings_.maxFramerate);
    int video_format = EVideoFormatType::videoFormatI420;
 -  openh264_encoder_->SetOption(ENCODER_OPTION_DATAFORMAT,
 +  encoder_->SetOption(ENCODER_OPTION_DATAFORMAT,
@@ -638,7 +638,7 @@ index bba30a3..6457f7b
  
    // Initialize encoded image. Default buffer size: size of unencoded data.
    encoded_image_._size = CalcBufferSize(
-@@ -234,11 +353,19 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
+@@ -233,11 +352,19 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* codec_settings,
  }
  
  int32_t H264EncoderImpl::Release() {
@@ -662,7 +662,7 @@ index bba30a3..6457f7b
    encoded_image_._buffer = nullptr;
    encoded_image_buffer_.reset();
    return WEBRTC_VIDEO_CODEC_OK;
-@@ -257,22 +384,25 @@ int32_t H264EncoderImpl::SetRates(uint32_t bitrate, uint32_t framerate) {
+@@ -256,22 +383,25 @@ int32_t H264EncoderImpl::SetRates(uint32_t bitrate, uint32_t framerate) {
    codec_settings_.targetBitrate = bitrate;
    codec_settings_.maxFramerate = framerate;
    quality_scaler_.ReportFramerate(framerate);
@@ -691,7 +691,7 @@ index bba30a3..6457f7b
    if (!IsInitialized()) {
      ReportError();
      return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
-@@ -288,9 +418,12 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -287,9 +417,12 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
      return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
    }
  
@@ -704,7 +704,7 @@ index bba30a3..6457f7b
    if (frame_buffer->width() != codec_settings_.width ||
        frame_buffer->height() != codec_settings_.height) {
      LOG(LS_INFO) << "Encoder reinitialized from " << codec_settings_.width
-@@ -298,10 +431,17 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -297,10 +430,17 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
                   << frame_buffer->width() << "x" << frame_buffer->height();
      codec_settings_.width = frame_buffer->width();
      codec_settings_.height = frame_buffer->height();
@@ -723,7 +723,7 @@ index bba30a3..6457f7b
  
    bool force_key_frame = false;
    if (frame_types != nullptr) {
-@@ -318,9 +458,36 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -317,9 +457,36 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
      // API doc says ForceIntraFrame(false) does nothing, but calling this
      // function forces a key frame regardless of the |bIDR| argument's value.
      // (If every frame is a key frame we get lag/delays.)
@@ -761,7 +761,7 @@ index bba30a3..6457f7b
    // EncodeFrame input.
    SSourcePicture picture;
    memset(&picture, 0, sizeof(SSourcePicture));
-@@ -340,13 +507,14 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -339,13 +506,14 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
    memset(&info, 0, sizeof(SFrameBSInfo));
  
    // Encode!
@@ -777,7 +777,7 @@ index bba30a3..6457f7b
  
    encoded_image_._encodedWidth = frame_buffer->width();
    encoded_image_._encodedHeight = frame_buffer->height();
-@@ -354,13 +522,95 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -353,13 +521,95 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
    encoded_image_.ntp_time_ms_ = input_frame.ntp_time_ms();
    encoded_image_.capture_time_ms_ = input_frame.render_time_ms();
    encoded_image_.rotation_ = input_frame.rotation();
@@ -873,7 +873,7 @@ index bba30a3..6457f7b
    // Encoder can skip frames to save bandwidth in which case
    // |encoded_image_._length| == 0.
    if (encoded_image_._length > 0) {
-@@ -369,16 +619,19 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
+@@ -368,16 +618,19 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
      codec_specific.codecType = kVideoCodecH264;
      encoded_image_callback_->Encoded(encoded_image_, &codec_specific,
                                       &frag_header);
@@ -894,7 +894,7 @@ index bba30a3..6457f7b
    return WEBRTC_VIDEO_CODEC_OK;
  }
  
-@@ -386,19 +639,26 @@ const char* H264EncoderImpl::ImplementationName() const {
+@@ -385,19 +638,26 @@ const char* H264EncoderImpl::ImplementationName() const {
    return "OpenH264";
  }
  
@@ -924,7 +924,7 @@ index bba30a3..6457f7b
    if (codec_settings_.mode == kRealtimeVideo) {
      encoder_params.iUsageType = CAMERA_VIDEO_REAL_TIME;
    } else if (codec_settings_.mode == kScreensharing) {
-@@ -444,6 +704,7 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
+@@ -443,6 +703,7 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams() const {
  
    return encoder_params;
  }
@@ -932,7 +932,7 @@ index bba30a3..6457f7b
  
  void H264EncoderImpl::ReportInit() {
    if (has_reported_init_)
-@@ -472,8 +733,10 @@ int32_t H264EncoderImpl::SetPeriodicKeyFrames(bool enable) {
+@@ -471,8 +732,10 @@ int32_t H264EncoderImpl::SetPeriodicKeyFrames(bool enable) {
    return WEBRTC_VIDEO_CODEC_OK;
  }
  
@@ -944,7 +944,7 @@ index bba30a3..6457f7b
  
  }  // namespace webrtc
 diff --git a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h
-index c6014e6..79b6275 100644
+index c6014e6..d1f2804 100644
 --- a/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h
 +++ b/webrtc/modules/video_coding/codecs/h264/h264_encoder_impl.h
 @@ -19,9 +19,25 @@
@@ -952,8 +952,8 @@ index c6014e6..79b6275 100644
  #include "webrtc/modules/video_coding/utility/quality_scaler.h"
  
 -#include "third_party/openh264/src/codec/api/svc/codec_app_def.h"
-+//#define USEOPENH264 1
-+//#define USEX264 1
++#define USEOPENH264 0
++#define USEX264 0
  
 +#if USEOPENH264
 +#include "third_party/openh264/src/codec/api/svc/codec_app_def.h"
@@ -1055,10 +1055,10 @@ index 6ed4e3b..af02e40 100644
  a=rtcp-fb:100 nack
  a=rtcp-fb:100 nack pli
 diff --git a/webrtc/video/video_loopback.cc b/webrtc/video/video_loopback.cc
-index 10998c8..c5fda31 100644
+index 3de0b14..a836409 100644
 --- a/webrtc/video/video_loopback.cc
 +++ b/webrtc/video/video_loopback.cc
-@@ -68,7 +68,7 @@ int NumTemporalLayers() {
+@@ -67,7 +67,7 @@ int NumTemporalLayers() {
  }
  
  // Flags common with screenshare loopback, with equal default values.
@@ -1067,7 +1067,7 @@ index 10998c8..c5fda31 100644
  std::string Codec() {
    return static_cast<std::string>(FLAGS_codec);
  }
-@@ -263,6 +263,7 @@ void Loopback() {
+@@ -279,6 +279,7 @@ void Loopback() {
  }
  }  // namespace webrtc
  
@@ -1075,16 +1075,16 @@ index 10998c8..c5fda31 100644
  int main(int argc, char* argv[]) {
    ::testing::InitGoogleTest(&argc, argv);
    google::ParseCommandLineFlags(&argc, &argv, true);
-@@ -271,3 +272,4 @@ int main(int argc, char* argv[]) {
+@@ -287,3 +288,4 @@ int main(int argc, char* argv[]) {
    webrtc::test::RunTest(webrtc::Loopback);
    return 0;
  }
 +#endif
 diff --git a/webrtc/video/vie_encoder.cc b/webrtc/video/vie_encoder.cc
-index 118959e..557bd69 100644
+index 95a6f5a..bcec76e 100644
 --- a/webrtc/video/vie_encoder.cc
 +++ b/webrtc/video/vie_encoder.cc
-@@ -141,7 +141,7 @@ VideoCodec VideoEncoderConfigToVideoCodec(const VideoEncoderConfig& config,
+@@ -134,7 +134,7 @@ VideoCodec VideoEncoderConfigToVideoCodec(
      // Different framerates not supported per stream at the moment.
      RTC_DCHECK_EQ(streams[i].max_framerate, streams[0].max_framerate);
      RTC_DCHECK_GE(streams[i].min_bitrate_bps, 0);

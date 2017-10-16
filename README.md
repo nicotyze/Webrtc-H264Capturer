@@ -13,6 +13,11 @@ https://github.com/mpromonet/webrtc-streamer
 https://github.com/zhanghuicuc/WebRTC-VideoEngine-Demo
 
 
+Environment
+-----------
+Tested with Ubuntu 14.04.3, Kernel 3.16.0-59-generic.   
+Prerequisites: git, curl, python, "build-essential"...
+
 Build
 ----- 
 Get WebRTC (https://webrtc.org/native-code/development/):   
@@ -20,14 +25,14 @@ Get WebRTC (https://webrtc.org/native-code/development/):
 	mkdir webrtc-checkout
 	cd webrtc-checkout
 	fetch --nohooks webrtc
-	gclient sync
+	gclient sync --with_branch_heads
 	export WEBRTC_DIR=`pwd`
 	
 
 Checkout the revision before patching:   
 	
 	cd $WEBRTC_DIR/src
-	git checkout 1d02d3e5e68e5025ddf8ab3af11e416778cd0201
+	git checkout branch-heads/55
 	python setup_links.py --force
 	gclient sync
 
