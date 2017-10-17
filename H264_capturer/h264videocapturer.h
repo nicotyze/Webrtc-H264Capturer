@@ -35,9 +35,8 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 			SetCaptureFormat(NULL);
 			set_enable_video_adapter(false);
 			frame_generator_ = new cricket::h264FrameGenerator();
-
-			frame_generator_->SetStreamingMode( in_f_name.find("://" )!= std::string::npos); //if file name contains "://" => enable streaming mode 
-			frame_generator_->SetStreamingMode( in_f_name.find(".sdp" )!= std::string::npos); // SDP file => enable streaming mode (otherwise it is file mode)
+			bool b_str_mode = ( in_f_name.find("://" )!= std::string::npos ) || ( in_f_name.find(".sdp" )!= std::string::npos); //if file name contains "://" or SDP file => enable streaming mode (otherwise it is file mode)
+			frame_generator_->SetStreamingMode( b_str_mode ); 
 			if( frame_generator_->InitFfmpegSession(in_f_name.c_str())!= 0)
 				fprintf(stderr,"########### Problem in FFMPEG initialization...#########");
 
