@@ -10,16 +10,12 @@
 
 #include <string.h>
 #include <sstream>
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/common.h"
 #include <cstddef>
 #include <vector>
 #include <queue>
 #include "webrtc/modules/video_coding/codecs/h264/h264_decoder_impl.h"
 
 #define PKT_BUF_LEN 1
-std::queue<AVPacket *> Pkt_buf;
-
 
 void *receive(void *th_arg){
 
@@ -27,6 +23,7 @@ void *receive(void *th_arg){
     rcv_th_data = (receive_th*)th_arg;
     int err;
     AVPacket *dummy_packet;
+    std::queue<AVPacket *> *Pkt_buf = &rcv_th_data->Pkt_buf_;
 
     while(1){
 
@@ -39,9 +36,11 @@ void *receive(void *th_arg){
         err = av_read_frame(rcv_th_data->pFormatCtx,packet);
         if(err<0){
           //pthread_exit(NULL);
-          //return 0 ;           
-            av_seek_frame(rcv_th_data->pFormatCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
-            packet->stream_index = -1;
+          //return 0 ;      
+            if( rcv_th_data->b_streaming == false ){     
+               av_seek_frame(rcv_th_data->pFormatCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
+               packet->stream_index = -1;
+            }
             //fprintf(stderr, "#################### =======> av_seek_frame");
             continue;
         }
@@ -50,7 +49,7 @@ void *receive(void *th_arg){
 
       pthread_mutex_lock(&rcv_th_data->fill_buff_mutex);
         //if(Pkt_buf.size()<PKT_BUF_LEN)
-        rcv_th_data->b_fill_buf = Pkt_buf.size() < PKT_BUF_LEN;
+        rcv_th_data->b_fill_buf = Pkt_buf->size() < PKT_BUF_LEN;
 
       if(rcv_th_data->b_streaming == false){
         while( rcv_th_data->b_fill_buf == 0 )
@@ -59,8 +58,8 @@ void *receive(void *th_arg){
       else{
 #if 1
         if( rcv_th_data->b_fill_buf == 0 ){// if streaming mode is true, the receiving thread is never blocked and some packets can be dropped
-          dummy_packet = Pkt_buf.front();
-          Pkt_buf.pop();
+          dummy_packet = Pkt_buf->front();
+          Pkt_buf->pop();
           av_packet_unref(dummy_packet);
         }
 #endif
@@ -221,6 +220,7 @@ int h264FrameGenerator::GenerateNextFrame(uint8_t* frame_buffer) {
 //######################### h264framegenerator ##############################################
 
   AVPacket *packet= nullptr;
+ std::queue<AVPacket *> *Pkt_buf = &rcv_th_data.Pkt_buf_;
   
   
 #if RCV
@@ -232,8 +232,8 @@ int h264FrameGenerator::GenerateNextFrame(uint8_t* frame_buffer) {
         ///////////////// Read packets from receiving thread ///////////////////////
 pkt:
         pthread_mutex_lock(&rcv_th_data.fill_buff_mutex);
-          if( Pkt_buf.size()>0 ){
-            packet=Pkt_buf.front();
+          if( Pkt_buf->size()>0 ){
+            packet=Pkt_buf->front();
             curr_time_stamp = packet->pts;
             if( pkt_offset == 0){
               prev_time_stamp = packet->pts;
@@ -243,19 +243,25 @@ pkt:
               //break;
             }
             else{
-              Pkt_buf.pop();
+              Pkt_buf->pop();
               prev_time_stamp = packet->pts;
             }
           }
           else{
-             pthread_mutex_unlock(&rcv_th_data.fill_buff_mutex);
-             pthread_mutex_lock(&rcv_th_data.new_pkt_mutex);
-               while( rcv_th_data.b_new_pkt == false)
-                    pthread_cond_wait(&rcv_th_data.new_pkt_cond, &rcv_th_data.new_pkt_mutex);
-               rcv_th_data.b_new_pkt = false;
-             pthread_mutex_unlock(&rcv_th_data.new_pkt_mutex);
-             //break;
-             goto pkt;
+            if( b_is_waiting_ ){
+               pthread_mutex_unlock(&rcv_th_data.fill_buff_mutex);
+               pthread_mutex_lock(&rcv_th_data.new_pkt_mutex);
+                 while( rcv_th_data.b_new_pkt == false)
+                      pthread_cond_wait(&rcv_th_data.new_pkt_cond, &rcv_th_data.new_pkt_mutex);
+                 rcv_th_data.b_new_pkt = false;
+               pthread_mutex_unlock(&rcv_th_data.new_pkt_mutex);
+               //break;
+               goto pkt;
+             }
+             else{
+               pthread_mutex_unlock(&rcv_th_data.fill_buff_mutex);
+               return 0;
+             }
           }
           if(rcv_th_data.b_streaming == false){
             rcv_th_data.b_fill_buf=true;
@@ -265,10 +271,7 @@ pkt:
         ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 memcpy(frame_buffer+pkt_offset, packet->data, packet->size);
-                frame_buffer[pkt_offset+packet->size] = 0x00;
-                frame_buffer[pkt_offset+packet->size+1] = 0x00;
-                frame_buffer[pkt_offset+packet->size+2] = 0x00;
-                frame_buffer[pkt_offset+packet->size+3] = 0x01;
+
         pkt_offset+= packet->size;
         av_packet_unref(packet);
 

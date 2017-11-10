@@ -10,9 +10,6 @@
 #ifndef H264VIDEOCAPTURER_H_
 #define H264VIDEOCAPTURER_H_
 
-#include "webrtc/base/thread.h"
-#include "webrtc/base/bind.h"
-#include "webrtc/base/asyncinvoker.h"
 #include "webrtc/media/base/videocapturer.h"
 #include "libyuv/convert.h"
 #include "libyuv/planar_functions.h"
@@ -29,14 +26,16 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 				width_(640),
 				height_(480), 
 				frame_generator_(NULL),
-				frame_(NULL)
+				frame_(NULL)/*,
+				frame_index_(0)*/
 		{
-			std::cout << "==========================RawVideoCapturer" << std::endl;
+			LOG(INFO) << "==========================RawVideoCapturer: " << in_f_name ;
 			SetCaptureFormat(NULL);
 			set_enable_video_adapter(false);
 			frame_generator_ = new cricket::h264FrameGenerator();
-			bool b_str_mode = ( in_f_name.find("://" )!= std::string::npos ) || ( in_f_name.find(".sdp" )!= std::string::npos); //if file name contains "://" or SDP file => enable streaming mode (otherwise it is file mode)
-			frame_generator_->SetStreamingMode( b_str_mode ); 
+			frame_generator_->setWaitState( true );
+
+			frame_generator_->SetStreamingMode( (in_f_name.find("://" )!= std::string::npos) || (in_f_name.find(".sdp" )!= std::string::npos)); //if file name contains "://" => enable streaming mode (otherwise it is file mode)
 			if( frame_generator_->InitFfmpegSession(in_f_name.c_str())!= 0)
 				fprintf(stderr,"########### Problem in FFMPEG initialization...#########");
 
@@ -83,19 +82,20 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 			rtc::scoped_refptr<webrtc::I420Buffer> buffer(webrtc::I420Buffer::Create(width_, height_));
 			// Makes it not all black.
 			buffer->InitializeData();
-			frame_ = new cricket::WebRtcVideoFrame(buffer, webrtc::kVideoRotation_0,10 /* timestamp_us */);
+			frame_ = new webrtc::VideoFrame(buffer, webrtc::kVideoRotation_0,10 /* timestamp_us */);
 
 			while(IsRunning())
 			{
-#if 0
-				nalu_size = frame_generator_->GenerateNextFrame((uint8_t*)captured_frame_.data+4);
-#else
-				nalu_size = frame_generator_->GenerateNextFrame((uint8_t*)buffer->DataY()+4);
-#endif
+#if 1
+				nalu_size = frame_generator_->GenerateNextFrame((uint8_t*)buffer->DataY()+5);
+
 				uint32_t * p_size;
 				p_size = (uint32_t*)buffer->DataY();
 				*p_size = nalu_size;
-
+				uint8_t * p_prio;
+				p_prio = (uint8_t*)buffer->DataY()+4;
+				p_prio[0] = 0x03;
+#endif
 
 #if 0
 				async_invoker_->AsyncInvoke<void>( RTC_FROM_HERE,
@@ -103,6 +103,7 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 					rtc::Bind(&RawVideoCapturer::SignalFrameCapturedOnStartThread, this));
 #else
 				this->OnFrame(*frame_,width_, height_);
+                                ProcessMessages(1);
 #endif
 				if( !frame_generator_->isStreamed() ){
 				  ProcessMessages(1000./frameRate_);
@@ -115,7 +116,7 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 		{
 			//std::cout << "===========================RawVideoCapturer::Start" << std::endl;
 			start_thread_ = rtc::Thread::Current();
-			async_invoker_.reset(new rtc::AsyncInvoker());
+			//async_invoker_.reset(new rtc::AsyncInvoker());
 			
 			SetCaptureFormat(&format);
 			SetCaptureState(cricket::CS_RUNNING);
@@ -126,7 +127,7 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 		virtual void Stop() 
 		{
 			rtc::Thread::Stop();
-			async_invoker_.reset();
+			//async_invoker_.reset();
 			SetCaptureFormat(NULL);
 			SetCaptureState(cricket::CS_STOPPED);
 		}
@@ -147,9 +148,9 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 		int frame_data_size_;
 		cricket::h264FrameGenerator* frame_generator_;
 		//cricket::CapturedFrame captured_frame_;
-		cricket::VideoFrame* frame_;
+		webrtc::VideoFrame* frame_;
 		rtc::Thread* start_thread_;
-		std::unique_ptr<rtc::AsyncInvoker> async_invoker_;
+		//std::unique_ptr<rtc::AsyncInvoker> async_invoker_;
 };
 
 

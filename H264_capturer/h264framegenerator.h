@@ -19,8 +19,7 @@
 // and sent over the network.
 #ifndef WEBRTC_MEDIA_BASE_H264FRAMEGENERATOR_H_
 #define WEBRTC_MEDIA_BASE_H264FRAMEGENERATOR_H_
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/constructormagic.h"
+
 
 #define RCV 1
 
@@ -41,6 +40,7 @@ struct receive_th{
     pthread_cond_t new_pkt_cond;
     pthread_mutex_t fill_buff_mutex;
     pthread_cond_t fill_buff_cond;
+    std::queue<AVPacket *> Pkt_buf_;
 };
 
 namespace cricket {
@@ -69,11 +69,13 @@ int GetNextFrame(AVFormatContext *pFormatCtx, AVCodecContext *pCodecCtx,
   int getFrameWidth(){return width_;}
   int getFrameHeight(){return height_;}
   int getFrameRate(){return frameRate_;}
+  void setWaitState(bool b_wait){b_is_waiting_ = b_wait;}
 
  private:
   int width_;
   int height_;
   int frameRate_;
+  bool b_is_waiting_ ;
   AVFormatContext *pFormatCtx;
   AVCodecContext  *pCodecCtx;
   AVCodec         *pCodec;
