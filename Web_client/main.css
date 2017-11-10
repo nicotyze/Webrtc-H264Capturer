@@ -29,7 +29,12 @@ a {
 #server {
   width:175px;
 }
-#iddivlocal {
+
+#iddivprntvideo {
+  position:absolute;
+}
+
+#iddivremote {
   position:absolute;
   top:0px;
   left:0px;
@@ -39,21 +44,6 @@ a {
   background-color:#CCCCCC;
   margin:20px;
   z-index:250;
-}
-
-#iddivprntvideo {
-  position:absolute;
-}
-
-#iddivremote {
-  position:absolute;
-  top:600px;
-  left:0px;
-  width:640px;
-  height:480px;
-  border:2px solid #507AAA;
-  background-color:#CCCCCC;
-  margin:20px;
 }
 
 #idheader {

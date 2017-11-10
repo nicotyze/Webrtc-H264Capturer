@@ -18,10 +18,16 @@ var messageCounter = 0;
 var otherPeers = {};
 
 var mediaConstraints = {
-    'mandatory': {
-        'offerToReceiveAudio': true,
-        'offerToReceiveVideo': true
-    }
+    mandatory: {
+        'OfferToReceiveAudio': false,
+        'OfferToReceiveVideo': true,
+        'OfferToSendAudio': false,
+        'OfferToSendVideo': false
+    },
+    'offerToReceiveAudio': false,
+    'offerToReceiveVideo': true ,
+    'offerToSendAudio': false,
+    'offerToSendVideo': false 
 };
 
 var sdpConstraints = {
@@ -29,6 +35,8 @@ var sdpConstraints = {
             DtlsSrtpKeyAgreement: true
         }, {
             RtpDataChannels: true
+        }, {
+            offerToSendVideo: false
         }]
 };
 
@@ -359,11 +367,11 @@ function hangup() {
 
 function initializePeerConnection()  {
     //Ask for local streams to be prepared, display self view
-    if (!started && window.stream && signed_In) {
+    if (!started  && signed_In) {
         console.log("Creating PeerConnection.");
         createPeerConnection();
         console.log("Adding local stream.");
-        pc.addStream(window.stream);
+        //pc.addStream(window.stream);
         console.log("started = true");
         started = true;
     }
@@ -548,20 +556,21 @@ var mergeConstraints = function(cons1, cons2) {
 
 function doCall() {
     console.log("Sending offer to peer.");
+      sendMessage({type: 'pleaseCallMe'});
 
-    if (!started && window.stream && signed_In) {
+    if (/*!started  && signed_In*/0) {
         console.log("Creating PeerConnection.");
         createPeerConnection();
         console.log("Adding local stream.");
-        pc.addStream(window.stream);
+        //pc.addStream(window.stream);
         console.log("started = true");
         started = true;
     }
 
-    setButton(true);
-    console.log("pc.createOffer in doCall().Sending offer to peer, with constraints: \n  \"" + JSON.stringify(mediaConstraints) + "\".");
-    pc.createOffer(setLocalAndSendMessage, CallAnswerErrorCallBack, mediaConstraints);
-    activeCall = true;
+    //setButton(true);
+    //console.log("pc.createOffer in doCall().Sending offer to peer, with constraints: \n  \"" + JSON.stringify(mediaConstraints) + "\".");
+    //pc.createOffer(setLocalAndSendMessage, CallAnswerErrorCallBack, mediaConstraints);
+    //activeCall = true;
 }
 
 function doAnswer() {
@@ -749,11 +758,11 @@ function randomString() {
 function onLoad() {
     console.log("onLoad");
 
-    if (window.stream) {
-        window.stream.getTracks().forEach(function(track) {
-            track.stop();
-        });
-    }
+    //if (window.stream) {
+    //    window.stream.getTracks().forEach(function(track) {
+     //       track.stop();
+    //    });
+   // }
 
     showSignInStatus();
 
@@ -768,7 +777,7 @@ function onLoad() {
         }
     }
 
-    navigator.mediaDevices.getUserMedia({video: true}).then(gotStream);
+    //navigator.mediaDevices.getUserMedia({video: true}).then(gotStream);
 }
 
 
