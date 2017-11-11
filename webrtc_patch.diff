@@ -11,7 +11,7 @@ index 8a1b9a2..f9817c3 100644
  #include "webrtc/rtc_base/json.h"
  #include "webrtc/rtc_base/logging.h"
  
-+#include "webrtc/examples/peerconnection/client/h264videocapturer_dual.h"
++#include "webrtc/examples/peerconnection/client/h264videocapturer.h"
 +
  // Names used for a IceCandidate JSON object.
  const char kCandidateSdpMidName[] = "sdpMid";
