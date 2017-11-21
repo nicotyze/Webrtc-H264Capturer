@@ -2,7 +2,13 @@ Webrtc-H264Capturer
 -------------------
 
 Workarounds to use external H.264 video encoders in WebRTC Native C++ source code.   
-A fake YUV capturer is used to write the H.264 elementary stream. Then, H.264 encoding (OpenH264) is bypassed and the elementary stream is directly packetized.
+The main purpose of this project is to allow using different kinds of video sources with WebRTC. Hence, Webrtc-H264Capturer makes it possible:
+	
+ - To use any video sources (not only webcams).   
+ - To use any H.264 encoder (not only OpenH264), especially hardware implementations.   
+
+The proposed approach does not require transcoding => low CPU usage. 
+A fake YUV capturer is used to write the H.264 elementary stream. Then, H.264 encoding (OpenH264) is bypassed and the elementary stream is directly packetized. 
 
 A web client is also provided in order to perform video streaming between WebRTC Native C++ and a web browser.
 
@@ -88,10 +94,29 @@ Launch the client with the external H.264 stream URL, e.g.:
 	
 	$WEBRTC_DIR/src/out/Default/peerconnection_client  --video_url "rtsp://192.168.123.53/Channel1"
 
-*The original GUI (gtk) of peerconnection_client has been removed in order to ease the integration in embeded system (e.g. Raspberry Pi ). Therefore the SDP offer made in conductor.cc in sendonly.*
+*The original GUI (gtk) of peerconnection_client has been removed in order to ease the integration in embeded system (e.g. Raspberry Pi: see Raspberrypi_cross_compile.md ). Therefore the SDP offer made in conductor.cc is sendonly.*
 
 Connect with a second client, e.g.:   
 	
 	firefox Web_client/index.html
 *To allow the peerconnection to be initiated from the web client, firefox must be configured (about:config) with (integer) media.navigator.video.preferred_codec = 126*
+
+Examples of H.264 video sources 
+-------------------------------
+- File (with H.264 elementary stream) 
+	
+		$WEBRTC_DIR/src/out/Default/peerconnection_client  --video_url big_buck_bunny_4s.264
+
+- Webcam logitech C920 (H.264 HW encoder)+ gstreamer 
+	
+		gst-launch-1.0 -v -e uvch264src device=/dev/video0 name=src auto-start=true  iframe-period=1000 initial-bitrate=3000000 minimum-bitrate=2000000 maximum-bitrate=2500000 average-bitrate=2000000  src.vidsrc !  'video/x-h264,width=1280,height=720,framerate=30/1' !  queue  !  h264parse  !  rtph264pay ! 'application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96'  ! udpsink host=127.0.0.1 port=1234
+		$WEBRTC_DIR/src/out/Default/peerconnection_client  --video_url test.sdp
+
+- Webcam with MJPEG support + Raspberry Pi and gstreamer omxh264enc (see Raspberrypi_cross_compile.md to embed the application on the board)
+	
+		gst-launch-1.0 v4l2src device=/dev/video0 !  image/jpeg,width=1280,height=720,framerate=30/1  ! jpegdec ! video/x-raw,width=1280,height=720,framerate=30/1  !  queue  ! omxh264enc target-bitrate=2000000 control-rate=variable periodicty-idr=30 interval-intraframes=30 !  video/x-h264, width=1280, height=720, framerate=30/1  ! queue ! h264parse ! rtph264pay  ! udpsink host=127.0.0.1 port=1234
+		peerconnection_client  --video_url test.sdp
+	
+	
+
 
