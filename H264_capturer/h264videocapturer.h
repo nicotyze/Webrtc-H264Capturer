@@ -103,7 +103,7 @@ class RawVideoCapturer : public cricket::VideoCapturer, public rtc::Thread
 					rtc::Bind(&RawVideoCapturer::SignalFrameCapturedOnStartThread, this));
 #else
 				this->OnFrame(*frame_,width_, height_);
-                                ProcessMessages(1);
+                                //ProcessMessages(1);
 #endif
 				if( !frame_generator_->isStreamed() ){
 				  ProcessMessages(1000./frameRate_);
