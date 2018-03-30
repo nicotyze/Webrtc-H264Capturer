@@ -66,7 +66,7 @@ void *receive(void *th_arg){
       }
             //AVPacket *packet = av_malloc(sizeof(AVPacket));
             //av_frame_ref (pFrame_ref,decode_th_data->pFrame);
-            Pkt_buf.push(packet);
+            Pkt_buf->push(packet);
       pthread_mutex_unlock(&rcv_th_data->fill_buff_mutex);
 
       pthread_mutex_lock(&rcv_th_data->new_pkt_mutex);
